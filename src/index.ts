@@ -197,20 +197,14 @@ const sketch: Sketch<"webgpu"> = async ({
           // Threshold: when extrude is below this, show base color (refill condition)
           const threshold = 0.05;
           // Create a smooth, gradual transition from level0 to level1
-          // Use a wider smoothstep range for much softer transition
-          const transitionStart = 0.0;
-          const transitionEnd = 0.15;
-          // Smooth transition factor: gradually increases from 0 to 1
-          const transitionFactor = smoothstep(transitionStart, transitionEnd, extrude);
           // Start with level0, gradually transition to other levels
-          let final = level0;
           // Make the first transition (level0 to level1) very soft and gradual
-          final = mix(final, level1, smoothstep(threshold, 0.20, extrude));
-          final = mix(final, level2, smoothstep(0.143, 0.286, extrude));
-          final = mix(final, level3, smoothstep(0.286, 0.429, extrude));
-          final = mix(final, level4, smoothstep(0.429, 0.571, extrude));
-          final = mix(final, level5, smoothstep(0.571, 0.714, extrude));
-          final = mix(final, level6, smoothstep(0.714, 0.857, extrude));
+          const step1 = mix(level0, level1, smoothstep(threshold, 0.20, extrude));
+          const step2 = mix(step1, level2, smoothstep(0.143, 0.286, extrude));
+          const step3 = mix(step2, level3, smoothstep(0.286, 0.429, extrude));
+          const step4 = mix(step3, level4, smoothstep(0.429, 0.571, extrude));
+          const step5 = mix(step4, level5, smoothstep(0.571, 0.714, extrude));
+          const final = mix(step5, level6, smoothstep(0.714, 0.857, extrude));
 
 
           // let finalCool = palette({ t: final })
