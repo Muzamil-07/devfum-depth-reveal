@@ -11,15 +11,19 @@
         margin: 0;
         width: 100%;
         height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
+        overflow-x: hidden;
       }
       body {
         background: #333;
+        min-height: 500vh; /* Make body tall enough to scroll through the model */
       }
       canvas {
         display: block;
+        width: 100vw;
+        height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
       }
     </style>
   </head>

@@ -1,6 +1,5 @@
 import type { Sketch, SketchSettings } from "ssam";
 import { ssam } from "ssam";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module.js";
 import { Fn, normalLocal, positionLocal, uv, vec4, positionWorld, vec2, vec3, mix, smoothstep, cameraProjectionMatrix, uniform, distance, texture, screenUV, modelViewMatrix, varying, cos, float, sRGBTransferOETF } from "three/tsl";
 import {
@@ -41,10 +40,11 @@ const sketch: Sketch<"webgpu"> = async ({
   const raycaster = new THREE.Raycaster();
 
   const camera = new PerspectiveCamera(50, width / height, 0.1, 1000);
-  camera.position.set(1, 2, 3);
+  // Fixed camera position - looking straight at the model
+  // Camera distance will be adjusted when model loads to fit full width
+  let cameraDistance = 5;
+  camera.position.set(0, 0, cameraDistance);
   camera.lookAt(0, 0, 0);
-
-  const controls = new OrbitControls(camera, renderer.domElement);
 
   const stats = new Stats();
   document.body.appendChild(stats.dom);
@@ -76,6 +76,9 @@ const sketch: Sketch<"webgpu"> = async ({
   trailTexture.needsUpdate = true;
 
   let loadedModel: THREE.Group | null = null;
+  let modelBoundingBox = new THREE.Box3();
+  let modelCenter = new THREE.Vector3();
+  let modelSize = new THREE.Vector3();
 
   const mouse = new THREE.Vector3();
   const mouse2D = new THREE.Vector2();
@@ -88,8 +91,11 @@ const sketch: Sketch<"webgpu"> = async ({
     mouse2D.set(event.clientX, event.clientY);
 
     if (!loadedModel) return;
-    let mouseX = (event.clientX / width) * 2 - 1;
-    let mouseY = -(event.clientY / height) * 2 + 1;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const canvasWidth = rect.width;
+    const canvasHeight = rect.height;
+    let mouseX = ((event.clientX - rect.left) / canvasWidth) * 2 - 1;
+    let mouseY = -((event.clientY - rect.top) / canvasHeight) * 2 + 1;
     raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
     const intersects = raycaster.intersectObjects(loadedModel.children);
     if (intersects?.length > 0) {
@@ -104,6 +110,35 @@ const sketch: Sketch<"webgpu"> = async ({
     const model = gltf.scene;
     loadedModel = model;
 
+    // Calculate bounding box and scale model to fit screen width
+    modelBoundingBox.setFromObject(model);
+    modelBoundingBox.getCenter(modelCenter);
+    modelBoundingBox.getSize(modelSize);
+    
+    // Calculate visible width at current camera distance
+    const fovRad = (camera.fov * Math.PI) / 180;
+    const visibleWidth = 2 * cameraDistance * Math.tan(fovRad / 2);
+    
+    // Scale model to fill 100% of visible width
+    const scale = visibleWidth / modelSize.x;
+    model.scale.set(scale, scale, scale);
+    
+    // Recalculate bounding box after scaling
+    modelBoundingBox.setFromObject(model);
+    modelBoundingBox.getCenter(modelCenter);
+    modelBoundingBox.getSize(modelSize);
+    
+    // Center the model
+    model.position.sub(modelCenter);
+    
+    // Fine-tune camera distance to ensure model fills width exactly
+    const finalVisibleWidth = modelSize.x;
+    cameraDistance = finalVisibleWidth / (2 * Math.tan(fovRad / 2));
+    // Zoom in by reducing camera distance (multiply by factor less than 1)
+    cameraDistance *= 0.4; // 0.4 = 40% of original distance = 60% zoom in
+    camera.position.set(0, 0, cameraDistance);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
 
     gltf.scene.traverse((child) => {
       if (child instanceof Mesh) {
@@ -180,10 +215,20 @@ const sketch: Sketch<"webgpu"> = async ({
     scene.add(model);
   });
 
+  // Handle scroll to move camera vertically
+  let scrollY = 0;
+  const handleScroll = () => {
+    scrollY = window.scrollY;
+    // Move camera vertically based on scroll
+    // Adjust the multiplier to control scroll sensitivity
+    camera.position.y = -scrollY * 0.01;
+    camera.lookAt(0, -scrollY * 0.01, 0);
+  };
+  window.addEventListener('scroll', handleScroll);
+
   wrap.render = ({ playhead }) => {
     trail.update(mouse2D);
     trailTexture.needsUpdate = true;
-    controls.update();
     stats.update();
     renderer.render(scene, camera);
   };
@@ -192,9 +237,15 @@ const sketch: Sketch<"webgpu"> = async ({
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
+    // Update trail canvas size
+    trail.canvas.width = width;
+    trail.canvas.height = height;
+    trail.canvas.style.width = '100px';
+    trail.canvas.style.height = `${200 * height / width}px`;
   };
 
   wrap.unload = () => {
+    window.removeEventListener('scroll', handleScroll);
     renderer.dispose();
   };
 };
