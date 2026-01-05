@@ -147,13 +147,13 @@ const sketch: Sketch<"webgpu"> = async ({
         let texture2 = child.material.emissiveMap;
         let uvscreen = varying(vec2(0., 0.));
 
-        const palette = Fn(({ t }) => {
-          const a = vec3(0.5, 0.5, 0.5);
-          const b = vec3(0.5, 0.5, 0.5);
-          const c = vec3(1.0, 1.0, 1.0);
-          const d = vec3(0.0, 0.10, 0.20);
-          return a.add(b.mul(cos(float(6.283185).mul(c.mul(t).add(d)))));
-        });
+        // const palette = Fn((t: any) => {
+        //   const a = vec3(0.5, 0.5, 0.5);
+        //   const b = vec3(0.5, 0.5, 0.5);
+        //   const c = vec3(1.0, 1.0, 1.0);
+        //   const d = vec3(0.0, 0.10, 0.20);
+        //   return a.add(b.mul(cos(float(6.283185).mul(c.mul(t).add(d)))));
+        // });
 
 
         // const sRGBTransferOETF = Fn(({ [color] }) => {
