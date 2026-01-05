@@ -174,7 +174,8 @@ const sketch: Sketch<"webgpu"> = async ({
           const ndc = cameraProjectionMatrix.mul(modelViewMatrix).mul(vec4(pos, 1.));
           uvscreen.assign(ndc.xyz.div(ndc.w).add(1.).div(2.));
           uvscreen.y = uvscreen.y.oneMinus()
-          const extrude = texture(trailTexture, uvscreen);
+          const extrudeTex = texture(trailTexture, uvscreen);
+          const extrude = extrudeTex.r; // Use red channel for grayscale value
           pos.z.mulAssign(mix(0., 1., extrude))
 
           return pos
@@ -184,19 +185,32 @@ const sketch: Sketch<"webgpu"> = async ({
           const dist = distance(positionWorld, uMouse);
           const tt1 = sRGBTransferOETF(texture(texture1, uv()));
           const tt2 = sRGBTransferOETF(texture(texture2, uv()));
-          const extrude = texture(trailTexture, screenUV);
-          let level0 = tt2.b;
-          let level1 = tt2.g;
-          let level2 = tt2.r;
-          let level3 = tt1.b;
-          let level4 = tt1.g;
-          let level5 = tt1.r;
+          const extrudeTex = texture(trailTexture, screenUV);
+          const extrude = extrudeTex.r; // Use red channel for grayscale value
+          let level0 = vec3(0.545, 0.545, 0.545); // Gray #858585 (5% lighter)
+          let level1 = tt2.b;
+          let level2 = tt2.g;
+          let level3 = tt2.r;
+          let level4 = tt1.b;
+          let level5 = tt1.g;
+          let level6 = tt1.r;
+          // Threshold: when extrude is below this, show base color (refill condition)
+          const threshold = 0.05;
+          // Create a smooth, gradual transition from level0 to level1
+          // Use a wider smoothstep range for much softer transition
+          const transitionStart = 0.0;
+          const transitionEnd = 0.15;
+          // Smooth transition factor: gradually increases from 0 to 1
+          const transitionFactor = smoothstep(transitionStart, transitionEnd, extrude);
+          // Start with level0, gradually transition to other levels
           let final = level0;
-          final = mix(final, level1, smoothstep(0., 0.2, extrude));
-          final = mix(final, level2, smoothstep(0.2, 0.4, extrude));
-          final = mix(final, level3, smoothstep(0.4, 0.6, extrude));
-          final = mix(final, level4, smoothstep(0.6, 0.8, extrude));
-          final = mix(final, level5, smoothstep(0.8, 1., extrude));
+          // Make the first transition (level0 to level1) very soft and gradual
+          final = mix(final, level1, smoothstep(threshold, 0.20, extrude));
+          final = mix(final, level2, smoothstep(0.143, 0.286, extrude));
+          final = mix(final, level3, smoothstep(0.286, 0.429, extrude));
+          final = mix(final, level4, smoothstep(0.429, 0.571, extrude));
+          final = mix(final, level5, smoothstep(0.571, 0.714, extrude));
+          final = mix(final, level6, smoothstep(0.714, 0.857, extrude));
 
 
           // let finalCool = palette({ t: final })
