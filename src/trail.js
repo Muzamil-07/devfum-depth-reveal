@@ -16,8 +16,8 @@ export default class TrailCanvas {
     
     // Circle radius - increased for larger brush size
     this.circleRadius = width * 0.08;
-    // Fade alpha - lower = slower fade
-    this.fadeAlpha = 0.02;
+    // Fade alpha - lower = slower fade, increased by 30% for faster reveal/unreveal
+    this.fadeAlpha = 0.026;
     // Store previous mouse position for continuous line drawing
     this.prevMouse = null;
     // Track movement for randomization
@@ -41,17 +41,18 @@ export default class TrailCanvas {
     
     // Use many color stops for ultra-smooth transition
     const numStops = 100;
+    const maxOpacity = 0.5; // Maximum opacity of the brush (50%)
     for (let i = 0; i <= numStops; i++) {
       const t = i / numStops;
       // Start fading very early (at 0.1) for extremely soft edge
       // Use smootherstep for the smoothest possible transition
       const fadeStart = 0.1;
       if (t < fadeStart) {
-        gradient.addColorStop(t, `rgba(255, 255, 255, 1.0)`);
+        gradient.addColorStop(t, `rgba(255, 255, 255, ${maxOpacity})`);
       } else {
         const fadeT = (t - fadeStart) / (1 - fadeStart);
         // Use smootherstep for ultra-smooth, soft falloff
-        const opacity = 1 - smootherstep(fadeT);
+        const opacity = maxOpacity * (1 - smootherstep(fadeT));
         gradient.addColorStop(t, `rgba(255, 255, 255, ${opacity})`);
       }
     }

@@ -61,14 +61,15 @@ const sketch: Sketch<"webgpu"> = async ({
   const materials = [];
 
 
-  const trail = new trailCanvas(width, height);
+  // Trail canvas will be resized after model loads
+  const trail = new trailCanvas(512, 512);
   let canv = trail.canvas;
   canv.style.position = 'absolute';
   canv.style.top = '0';
   canv.style.left = '0';
   canv.style.zIndex = '1000';
   canv.style.width = '100px';
-  canv.style.height = `${200 * height / width}px`;
+  canv.style.height = `100px`;
   document.body.appendChild(canv);
 
   let trailTexture = new THREE.CanvasTexture(trail.getTexture());
@@ -79,6 +80,8 @@ const sketch: Sketch<"webgpu"> = async ({
   let modelBoundingBox = new THREE.Box3();
   let modelCenter = new THREE.Vector3();
   let modelSize = new THREE.Vector3();
+  let modelScreenHeight = height; // Will be updated after model loads
+  let modelScreenWidth = width; // Will be updated after model loads
 
   const mouse = new THREE.Vector3();
   const mouse2D = new THREE.Vector2(-1, -1); // Initialize to invalid position
@@ -94,26 +97,44 @@ const sketch: Sketch<"webgpu"> = async ({
       event.clientX >= rect.left && event.clientX <= rect.right &&
       event.clientY >= rect.top && event.clientY <= rect.bottom;
     
-    if (isWithinBounds) {
-      const canvasX = ((event.clientX - rect.left) / rect.width) * width;
-      const canvasY = ((event.clientY - rect.top) / rect.height) * height;
-      mouse2D.set(canvasX, canvasY);
-    } else {
-      // Mouse is outside canvas, clear brush
-      (trail as any).clearMouse();
-      mouse2D.set(-1, -1);
+    if (!loadedModel) {
+      if (isWithinBounds) {
+        const canvasX = ((event.clientX - rect.left) / rect.width) * width;
+        const canvasY = ((event.clientY - rect.top) / rect.height) * height;
+        mouse2D.set(canvasX, canvasY);
+      } else {
+        (trail as any).clearMouse();
+        mouse2D.set(-1, -1);
+      }
+      return;
     }
-
-    if (!loadedModel) return;
+    
     const canvasWidth = rect.width;
     const canvasHeight = rect.height;
     let mouseX = ((event.clientX - rect.left) / canvasWidth) * 2 - 1;
     let mouseY = -((event.clientY - rect.top) / canvasHeight) * 2 + 1;
     raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), camera);
     const intersects = raycaster.intersectObjects(loadedModel.children);
-    if (intersects?.length > 0) {
-      // console.log(intersects[0].point);
-      uMouse.value.copy(intersects[0].point);
+    
+    if (intersects?.length > 0 && isWithinBounds) {
+      // Map world position to trail canvas coordinates
+      const worldPos = intersects[0].point;
+      uMouse.value.copy(worldPos);
+      
+      // Map world Y position to trail canvas Y coordinate
+      // Model Y ranges from modelBoundingBox.min.y to modelBoundingBox.max.y
+      // Trail canvas Y ranges from 0 to trail.canvas.height
+      const normalizedX = (worldPos.x - modelBoundingBox.min.x) / (modelBoundingBox.max.x - modelBoundingBox.min.x);
+      const normalizedY = (worldPos.y - modelBoundingBox.min.y) / (modelBoundingBox.max.y - modelBoundingBox.min.y);
+      
+      const trailX = normalizedX * trail.canvas.width;
+      const trailY = normalizedY * trail.canvas.height;
+      
+      mouse2D.set(trailX, trailY);
+    } else {
+      // Mouse is outside canvas or no intersection, clear brush
+      (trail as any).clearMouse();
+      mouse2D.set(-1, -1);
     }
   });
   
@@ -168,6 +189,27 @@ const sketch: Sketch<"webgpu"> = async ({
     camera.position.set(0, 0, cameraDistance);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
+    
+    // Resize trail canvas to match model's aspect ratio
+    // Model dimensions in world space: modelSize.x × modelSize.y
+    // We want trail canvas to have same aspect ratio as model
+    const modelAspect = modelSize.x / modelSize.y;
+    
+    // Use a reasonable base resolution (e.g., 1024 pixels for width)
+    const trailWidth = 1024;
+    const trailHeight = Math.round(trailWidth / modelAspect);
+    
+    trail.canvas.width = trailWidth;
+    trail.canvas.height = trailHeight;
+    trail.circleRadius = trailWidth * 0.08; // Update brush size
+    
+    // Update display size (for debugging)
+    trail.canvas.style.width = '100px';
+    trail.canvas.style.height = `${100 / modelAspect}px`;
+    
+    // Store screen dimensions for reference
+    modelScreenWidth = trailWidth;
+    modelScreenHeight = trailHeight;
 
     gltf.scene.traverse((child) => {
       if (child instanceof Mesh) {
@@ -200,12 +242,16 @@ const sketch: Sketch<"webgpu"> = async ({
 
         material.positionNode = Fn(() => {
           const pos = positionLocal
-          const ndc = cameraProjectionMatrix.mul(modelViewMatrix).mul(vec4(pos, 1.));
-          uvscreen.assign(ndc.xyz.div(ndc.w).add(1.).div(2.));
-          uvscreen.y = uvscreen.y.oneMinus()
+          // Use world-space position mapped to model bounding box for UV
+          const worldPos = positionWorld;
+          const minBounds = vec3(modelBoundingBox.min.x, modelBoundingBox.min.y, modelBoundingBox.min.z);
+          const maxBounds = vec3(modelBoundingBox.max.x, modelBoundingBox.max.y, modelBoundingBox.max.z);
+          const normalizedPos = worldPos.sub(minBounds).div(maxBounds.sub(minBounds));
+          uvscreen.assign(vec2(normalizedPos.x, normalizedPos.y));
+          
           const extrudeTex = texture(trailTexture, uvscreen);
           const extrude = extrudeTex.r; // Use red channel for grayscale value
-          pos.z.mulAssign(mix(0., 1., extrude))
+          pos.z.mulAssign(mix(0., 1, extrude))
 
           return pos
         })();
@@ -214,15 +260,19 @@ const sketch: Sketch<"webgpu"> = async ({
           const dist = distance(positionWorld, uMouse);
           const tt1 = sRGBTransferOETF(texture(texture1, uv()));
           const tt2 = sRGBTransferOETF(texture(texture2, uv()));
-          const extrudeTex = texture(trailTexture, screenUV);
+          // Use the same world-space UV as in positionNode
+          const extrudeTex = texture(trailTexture, uvscreen);
           const extrude = extrudeTex.r; // Use red channel for grayscale value
-          let level0 = vec3(0.545, 0.545, 0.545); // Gray #858585 (5% lighter)
-          let level1 = tt2.b;
-          let level2 = tt2.g;
-          let level3 = tt2.r;
-          let level4 = tt1.b;
-          let level5 = tt1.g;
-          let level6 = tt1.r;
+          
+          // Use vec4 for all levels to track both color and alpha
+          let level0 = vec4(0.839, 0.839, 0.839, 0.5); // Light gray with 50% opacity
+          let level1 = vec4(tt2.b.add(0.3), tt2.b.add(0.3), tt2.b.add(0.3), 0.02);
+          let level2 = vec4(tt2.g.add(0.3), tt2.g.add(0.3), tt2.g.add(0.3), 0.80);
+          let level3 = vec4(tt2.r.add(0.3), tt2.r.add(0.3), tt2.r.add(0.3), 0.80);
+          let level4 = vec4(tt1.b.add(0.3), tt1.b.add(0.3), tt1.b.add(0.3), 0.80);
+          let level5 = vec4(tt1.g.add(0.3), tt1.g.add(0.3), tt1.g.add(0.3), 0.70);
+          let level6 = vec4(tt1.r.add(0.3), tt1.r.add(0.3), tt1.r.add(0.3), 0.70);
+          
           // Threshold: when extrude is below this, show base color (refill condition)
           const threshold = 0.05;
           // Create ultra-smooth, gradual transitions from level0 to level1
@@ -241,7 +291,7 @@ const sketch: Sketch<"webgpu"> = async ({
           // return vec4(vec3(finalCool), 1);
 
 
-          return vec4(vec3(final), 1);
+          return final;
 
 
         })();
@@ -274,11 +324,13 @@ const sketch: Sketch<"webgpu"> = async ({
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
-    // Update trail canvas size
-    trail.canvas.width = width;
-    trail.canvas.height = height;
-    trail.canvas.style.width = '100px';
-    trail.canvas.style.height = `${200 * height / width}px`;
+    // Trail canvas size is based on model dimensions, not viewport
+    // Keep the aspect ratio consistent with the model
+    if (loadedModel) {
+      const modelAspect = modelSize.x / modelSize.y;
+      trail.canvas.style.width = '100px';
+      trail.canvas.style.height = `${100 / modelAspect}px`;
+    }
   };
 
   wrap.unload = () => {
