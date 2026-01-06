@@ -81,17 +81,30 @@ const sketch: Sketch<"webgpu"> = async ({
   let modelSize = new THREE.Vector3();
 
   const mouse = new THREE.Vector3();
-  const mouse2D = new THREE.Vector2();
+  const mouse2D = new THREE.Vector2(-1, -1); // Initialize to invalid position
   const uMouse = uniform(mouse, 'vec3');
 
   // let dummy = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
   // scene.add(dummy);
   document.addEventListener('mousemove', (event) => {
-    // Always update mouse2D for trail canvas
-    mouse2D.set(event.clientX, event.clientY);
+    // Convert mouse coordinates to canvas coordinates for trail
+    const rect = renderer.domElement.getBoundingClientRect();
+    // Check if mouse is within canvas bounds
+    const isWithinBounds = 
+      event.clientX >= rect.left && event.clientX <= rect.right &&
+      event.clientY >= rect.top && event.clientY <= rect.bottom;
+    
+    if (isWithinBounds) {
+      const canvasX = ((event.clientX - rect.left) / rect.width) * width;
+      const canvasY = ((event.clientY - rect.top) / rect.height) * height;
+      mouse2D.set(canvasX, canvasY);
+    } else {
+      // Mouse is outside canvas, clear brush
+      (trail as any).clearMouse();
+      mouse2D.set(-1, -1);
+    }
 
     if (!loadedModel) return;
-    const rect = renderer.domElement.getBoundingClientRect();
     const canvasWidth = rect.width;
     const canvasHeight = rect.height;
     let mouseX = ((event.clientX - rect.left) / canvasWidth) * 2 - 1;
@@ -102,6 +115,22 @@ const sketch: Sketch<"webgpu"> = async ({
       // console.log(intersects[0].point);
       uMouse.value.copy(intersects[0].point);
     }
+  });
+  
+  // Clear brush when mouse leaves the canvas area
+  document.addEventListener('mouseleave', (event) => {
+    // Check if mouse left the document or the canvas area
+    if (!event.relatedTarget || !renderer.domElement.contains(event.relatedTarget as Node)) {
+      (trail as any).clearMouse();
+      // Set mouse2D to null or outside bounds to stop drawing
+      mouse2D.set(-1, -1);
+    }
+  });
+  
+  // Also handle mouseleave on the canvas element itself
+  renderer.domElement.addEventListener('mouseleave', () => {
+    (trail as any).clearMouse();
+    mouse2D.set(-1, -1);
   });
 
   const loader = new GLTFLoader();
@@ -134,8 +163,8 @@ const sketch: Sketch<"webgpu"> = async ({
     // Fine-tune camera distance to ensure model fills width exactly
     const finalVisibleWidth = modelSize.x;
     cameraDistance = finalVisibleWidth / (2 * Math.tan(fovRad / 2));
-    // Zoom in by reducing camera distance (multiply by factor less than 1)
-    cameraDistance *= 0.4; // 0.4 = 40% of original distance = 60% zoom in
+    // Zoom level
+    cameraDistance *= 0.5; // 0.5 = 50% of original distance
     camera.position.set(0, 0, cameraDistance);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
@@ -196,15 +225,15 @@ const sketch: Sketch<"webgpu"> = async ({
           let level6 = tt1.r;
           // Threshold: when extrude is below this, show base color (refill condition)
           const threshold = 0.05;
-          // Create a smooth, gradual transition from level0 to level1
-          // Start with level0, gradually transition to other levels
-          // Make the first transition (level0 to level1) very soft and gradual
-          const step1 = mix(level0, level1, smoothstep(threshold, 0.20, extrude));
-          const step2 = mix(step1, level2, smoothstep(0.143, 0.286, extrude));
-          const step3 = mix(step2, level3, smoothstep(0.286, 0.429, extrude));
-          const step4 = mix(step3, level4, smoothstep(0.429, 0.571, extrude));
-          const step5 = mix(step4, level5, smoothstep(0.571, 0.714, extrude));
-          const final = mix(step5, level6, smoothstep(0.714, 0.857, extrude));
+          // Create ultra-smooth, gradual transitions from level0 to level1
+          // Use wider smoothstep ranges for softer, more gradual color transitions
+          // First transition is extra wide for maximum softness
+          const step1 = mix(level0, level1, smoothstep(threshold, 0.35, extrude));
+          const step2 = mix(step1, level2, smoothstep(0.20, 0.40, extrude));
+          const step3 = mix(step2, level3, smoothstep(0.35, 0.55, extrude));
+          const step4 = mix(step3, level4, smoothstep(0.50, 0.70, extrude));
+          const step5 = mix(step4, level5, smoothstep(0.65, 0.85, extrude));
+          const final = mix(step5, level6, smoothstep(0.80, 0.95, extrude));
 
 
           // let finalCool = palette({ t: final })
