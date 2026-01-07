@@ -33,7 +33,7 @@ const sketch: Sketch<"webgpu"> = async ({
   const renderer = new WebGPURenderer({ canvas, antialias: true });
   renderer.setSize(width, height);
   renderer.setPixelRatio(pixelRatio);
-  renderer.setClearColor(new Color(0xffffff), 1);
+  renderer.setClearColor(new Color(0xECECEC), 1);
   await renderer.init();
 
 
