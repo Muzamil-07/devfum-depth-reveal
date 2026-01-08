@@ -15,7 +15,7 @@ export default class TrailCanvas {
     this.ctx.fillRect(0, 0, width, height);
     
     // Circle radius - increased for larger brush size
-    this.circleRadius = width * 0.08;
+    this.circleRadius = width * 0.15;
     // Fade alpha - lower = slower fade, increased by 30% for faster reveal/unreveal
     this.fadeAlpha = 0.026;
     // Store previous mouse position for continuous line drawing
@@ -86,16 +86,16 @@ export default class TrailCanvas {
     if (isMoving) {
       const r0 = this.seededRandom(seed + 9999);
       const r1 = this.seededRandom(seed + 9998);
-      // Random offset to base position when moving (up to 60% of radius)
-      const baseOffsetDistance = this.circleRadius * 0.6 * r0;
+      // Random offset to base position when moving (reduced from 60% to 20% of radius)
+      const baseOffsetDistance = this.circleRadius * 0.2 * r0;
       const baseOffsetAngle = r1 * Math.PI * 2;
       baseX = x + Math.cos(baseOffsetAngle) * baseOffsetDistance;
       baseY = y + Math.sin(baseOffsetAngle) * baseOffsetDistance;
     }
     
-    // Random number of circles (1-3)
+    // Random number of circles (reduced from 1-3 to 1-2)
     const r1 = this.seededRandom(seed);
-    const numCircles = Math.floor(r1 * 3) + 1; // 1-3 circles
+    const numCircles = Math.floor(r1 * 2) + 1; // 1-2 circles
     
     for (let i = 0; i < numCircles; i++) {
       const circleSeed = seed + i * 10000;
@@ -106,11 +106,11 @@ export default class TrailCanvas {
       const r4 = this.seededRandom(circleSeed + 3);
       const r5 = this.seededRandom(circleSeed + 4);
       
-      // Random size (50% to 120% of base radius)
-      const radius = this.circleRadius * (0.5 + r2 * 0.7);
+      // Random size (reduced variation: 85% to 100% of base radius)
+      const radius = this.circleRadius * (0.85 + r2 * 0.15);
       
-      // Random offset from center - more random when moving
-      const maxOffset = isMoving ? 0.8 : 0.4; // 80% when moving, 40% when stopped
+      // Random offset from center - reduced randomness
+      const maxOffset = isMoving ? 0.3 : 0.15; // 30% when moving, 15% when stopped (reduced from 80%/40%)
       const offsetDistance = radius * maxOffset * r3;
       const offsetAngle = r4 * Math.PI * 2;
       const circleX = baseX + Math.cos(offsetAngle) * offsetDistance;

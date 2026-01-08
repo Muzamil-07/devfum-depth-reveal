@@ -70,6 +70,7 @@ const sketch: Sketch<"webgpu"> = async ({
   canv.style.zIndex = '1000';
   canv.style.width = '100px';
   canv.style.height = `100px`;
+  canv.style.display = 'none';
   document.body.appendChild(canv);
 
   let trailTexture = new THREE.CanvasTexture(trail.getTexture());
@@ -180,6 +181,8 @@ const sketch: Sketch<"webgpu"> = async ({
     
     // Center the model
     model.position.sub(modelCenter);
+    // Move model down by 40% of its height
+    model.position.y -= modelSize.y * 0.4;
     
     // Fine-tune camera distance to ensure model fills width exactly
     const finalVisibleWidth = modelSize.x;
@@ -201,7 +204,7 @@ const sketch: Sketch<"webgpu"> = async ({
     
     trail.canvas.width = trailWidth;
     trail.canvas.height = trailHeight;
-    trail.circleRadius = trailWidth * 0.08; // Update brush size
+    trail.circleRadius = trailWidth * 0.15; // Update brush size (increased from 0.08)
     
     // Update display size (for debugging)
     trail.canvas.style.width = '100px';
