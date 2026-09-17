@@ -14,9 +14,75 @@ import {
 
 import modelUrl from "./assets/models/reliefs_low_compressed.glb";
 import * as THREE from "three/webgpu";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { GLTFLoader, type GLTF } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import trailCanvas from "./trail.js";
+import { createExperienceLoader } from "./loader";
+
+const boot = createExperienceLoader();
+boot.setProgress(3);
+boot.setStatus("Preparing the relief");
+
+function nextFrame() {
+  return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+async function waitForTextures(root: THREE.Object3D) {
+  const pending: Promise<void>[] = [];
+
+  root.traverse((child) => {
+    if (!(child instanceof Mesh)) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+
+    for (const material of materials as Array<Record<string, THREE.Texture | undefined>>) {
+      const maps = [
+        material.map,
+        material.emissiveMap,
+        material.normalMap,
+        material.roughnessMap,
+      ] as Array<THREE.Texture | null | undefined>;
+
+      for (const map of maps) {
+        if (!map) continue;
+        const image = map.image as { complete?: boolean; addEventListener?: Function } | ImageBitmap | undefined;
+        if (!image || image instanceof ImageBitmap) continue;
+        if (image.complete) continue;
+        pending.push(
+          new Promise((resolve) => {
+            const done = () => resolve();
+            image.addEventListener?.("load", done, { once: true });
+            image.addEventListener?.("error", done, { once: true });
+            window.setTimeout(done, 4000);
+          }),
+        );
+      }
+    }
+  });
+
+  if (pending.length) await Promise.all(pending);
+}
+
+async function warmGpu(renderer: WebGPURenderer, scene: Scene, camera: PerspectiveCamera) {
+  const gpuRenderer = renderer as WebGPURenderer & {
+    compileAsync?: (scene: Scene, camera: PerspectiveCamera) => Promise<void>;
+    renderAsync?: (scene: Scene, camera: PerspectiveCamera) => Promise<void>;
+  };
+
+  if (typeof gpuRenderer.compileAsync === "function") {
+    await gpuRenderer.compileAsync(scene, camera);
+  }
+
+  if (typeof gpuRenderer.renderAsync === "function") {
+    await gpuRenderer.renderAsync(scene, camera);
+    await nextFrame();
+    await gpuRenderer.renderAsync(scene, camera);
+    return;
+  }
+
+  renderer.render(scene, camera);
+  await nextFrame();
+  renderer.render(scene, camera);
+}
 
 const sketch: Sketch<"webgpu"> = async ({
   wrap,
@@ -30,11 +96,21 @@ const sketch: Sketch<"webgpu"> = async ({
     import.meta.hot.accept(() => wrap.hotReload());
   }
 
+  boot.setProgress(6);
+  boot.setStatus("Initializing the renderer");
+
   const renderer = new WebGPURenderer({ canvas, antialias: true });
   renderer.setSize(width, height);
   renderer.setPixelRatio(pixelRatio);
   renderer.setClearColor(new Color(0xECECEC), 1);
-  await renderer.init();
+  try {
+    await renderer.init();
+  } catch (error) {
+    console.error(error);
+    boot.fail("WebGPU is not available in this browser");
+    throw error;
+  }
+  boot.setProgress(12);
 
 
   const raycaster = new THREE.Raycaster();
@@ -47,6 +123,7 @@ const sketch: Sketch<"webgpu"> = async ({
   camera.lookAt(0, 0, 0);
 
   const stats = new Stats();
+  stats.dom.style.display = "none";
   document.body.appendChild(stats.dom);
 
   const scene = new Scene();
@@ -57,6 +134,8 @@ const sketch: Sketch<"webgpu"> = async ({
   const dracoLoader = new DRACOLoader();
   // You may need to adjust the path below depending on your file structure or use DRACOLoader.getDecoderModule()
   dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+  dracoLoader.preload();
+  boot.setStatus("Loading the sculpture");
 
   const materials = [];
 
@@ -98,7 +177,7 @@ const sketch: Sketch<"webgpu"> = async ({
       event.clientX >= rect.left && event.clientX <= rect.right &&
       event.clientY >= rect.top && event.clientY <= rect.bottom;
     
-    if (!loadedModel) {
+    if (!loadedModel || document.documentElement.classList.contains("is-booting")) {
       if (isWithinBounds) {
         const canvasX = ((event.clientX - rect.left) / rect.width) * width;
         const canvasY = ((event.clientY - rect.top) / rect.height) * height;
@@ -157,9 +236,35 @@ const sketch: Sketch<"webgpu"> = async ({
 
   const loader = new GLTFLoader();
   loader.setDRACOLoader(dracoLoader);
-  loader.load(modelUrl, (gltf) => {
-    const model = gltf.scene;
-    loadedModel = model;
+
+  let gltf: GLTF;
+  try {
+    gltf = await new Promise<GLTF>((resolve, reject) => {
+      loader.load(
+        modelUrl,
+        resolve,
+        (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            boot.setProgress(12 + (event.loaded / event.total) * 63);
+            return;
+          }
+          boot.setProgress(48);
+        },
+        reject,
+      );
+    });
+  } catch (error) {
+    console.error(error);
+    boot.fail();
+    throw error;
+  }
+
+  boot.setProgress(78);
+  boot.setStatus("Sculpting materials");
+
+  const model = gltf.scene;
+  await waitForTextures(model);
+  loadedModel = model;
 
     // Calculate bounding box and scale model to fit screen width
     modelBoundingBox.setFromObject(model);
@@ -302,8 +407,14 @@ const sketch: Sketch<"webgpu"> = async ({
         materials.push(material);
       }
     });
-    scene.add(model);
-  });
+  scene.add(model);
+
+  boot.setProgress(90);
+  boot.setStatus("Warming the surface");
+  await warmGpu(renderer, scene, camera);
+
+  stats.dom.style.display = "";
+  await boot.complete();
 
   // Handle scroll to move camera vertically
   let scrollY = 0;

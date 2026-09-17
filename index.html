@@ -1,21 +1,44 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="is-booting">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>create-ssam</title>
+    <title>Depth Reveal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Syne:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
+      :root {
+        --paper: #ececec;
+        --ink: #1c1c1c;
+        --ink-soft: rgba(28, 28, 28, 0.48);
+        --hairline: rgba(28, 28, 28, 0.16);
+      }
+
       html,
       body {
         margin: 0;
         width: 100%;
         height: 100%;
       }
+
       body {
-        background: #ECECEC;
-        min-height: 340vh; /* Make body tall enough to scroll through the model */
+        background: var(--paper);
+        min-height: 340vh;
+        color: var(--ink);
       }
+
+      html.is-booting,
+      body.is-booting {
+        overflow: hidden;
+        height: 100%;
+        min-height: 100%;
+      }
+
       canvas {
         display: block;
         width: 100vw;
@@ -24,9 +47,203 @@
         top: 0;
         left: 0;
       }
+
+      .boot {
+        position: fixed;
+        inset: 0;
+        z-index: 100000;
+        display: grid;
+        place-items: center;
+        background: var(--paper);
+        transition: opacity 0.85s ease, visibility 0.85s ease;
+      }
+
+      .boot.is-done {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      .boot__stage {
+        width: min(520px, calc(100vw - 48px));
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 22px;
+      }
+
+      .boot__kicker {
+        margin: 0;
+        font-family: "Cormorant Garamond", Georgia, serif;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+      }
+
+      .boot__counter {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        line-height: 0.8;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .boot__counter span:first-child {
+        font-family: Syne, sans-serif;
+        font-size: clamp(84px, 18vw, 148px);
+        font-weight: 600;
+        letter-spacing: -0.07em;
+      }
+
+      .boot__unit {
+        font-family: Syne, sans-serif;
+        font-size: clamp(22px, 4vw, 32px);
+        font-weight: 500;
+        color: var(--ink-soft);
+      }
+
+      .boot__track {
+        width: 100%;
+        height: 1px;
+        background: var(--hairline);
+        overflow: hidden;
+      }
+
+      .boot__fill {
+        width: 0%;
+        height: 100%;
+        background: var(--ink);
+        transform-origin: left center;
+      }
+
+      .boot__status {
+        margin: 0;
+        font-family: "Cormorant Garamond", Georgia, serif;
+        font-size: clamp(18px, 2.4vw, 22px);
+        font-style: italic;
+        font-weight: 500;
+        color: var(--ink);
+      }
+
+      .boot.is-failed .boot__status {
+        color: #8a2a2a;
+      }
+
+      .hint {
+        position: fixed;
+        left: 50%;
+        bottom: max(7vh, 32px);
+        z-index: 99990;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin: 0;
+        padding: 0 20px;
+        transform: translate(-50%, 14px);
+        opacity: 0;
+        pointer-events: none;
+        color: var(--ink);
+        transition: opacity 0.9s ease, transform 0.9s ease;
+      }
+
+      .hint.is-visible {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+
+      .hint.is-gone {
+        opacity: 0;
+        transform: translate(-50%, -10px);
+      }
+
+      .hint__glyph {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 auto;
+        animation: hint-drift 2.4s ease-in-out infinite;
+      }
+
+      .hint p {
+        margin: 0;
+        font-family: "Cormorant Garamond", Georgia, serif;
+        font-size: clamp(18px, 2.4vw, 26px);
+        font-style: italic;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+      }
+
+      @keyframes hint-drift {
+        0%,
+        100% {
+          transform: translate(0, 0);
+        }
+        50% {
+          transform: translate(7px, -5px);
+        }
+      }
+
+      @media (max-width: 640px) {
+        .hint p {
+          white-space: normal;
+          text-align: left;
+          max-width: 220px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot,
+        .hint,
+        .hint__glyph {
+          animation: none;
+          transition: none;
+        }
+      }
     </style>
   </head>
-  <body>
+  <body class="is-booting">
+    <div
+      id="boot"
+      class="boot"
+      role="progressbar"
+      aria-busy="true"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+      aria-labelledby="boot-status"
+    >
+      <div class="boot__stage">
+        <p class="boot__kicker">Depth Reveal</p>
+        <div class="boot__counter">
+          <span id="boot-percent">0</span>
+          <span class="boot__unit">%</span>
+        </div>
+        <div class="boot__track" aria-hidden="true">
+          <div id="boot-fill" class="boot__fill"></div>
+        </div>
+        <p id="boot-status" class="boot__status">Preparing the relief</p>
+      </div>
+    </div>
+
+    <div id="hint" class="hint" aria-hidden="true" role="note">
+      <svg
+        class="hint__glyph"
+        viewBox="0 0 34 34"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M9 4.5 12.2 24.8l4.1-6.3 7.6 7.6 2.2-2.2-7.6-7.6 6.3-4.1L9 4.5Z"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linejoin="round"
+        />
+      </svg>
+      <p id="hint-copy">Move your cursor to see the depth reveal</p>
+    </div>
+
     <script type="module" src="./src/index.ts"></script>
   </body>
 </html>
